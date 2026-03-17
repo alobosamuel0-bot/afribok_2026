@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: afribok
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'afribok'
+        environment: 'production'
+    
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - alertmanager:9093
+    
+    rule_files:
+      - /etc/prometheus/rules.yml
+    
+    scrape_configs:
+    - job_name: 'prometheus'
+      static_configs:
+      - targets: ['localhost:9090']
+    
+    - job_name: 'backend-api'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - afribok
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: afribok-backend
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        action: keep
+        regex: "8000"
+    
+    - job_name: 'postgres'
+      static_configs:
+      - targets: ['postgres-exporter:9187']
+    
+    - job_name: 'redis'
+      static_configs:
+      - targets: ['redis-exporter:9121']
+    
+    - job_name: 'kubernetes-pods'
+      kubernetes_sd_configs:
+      - role: pod
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+
+  rules.yml: |
+    groups:
+    - name: afribok_alerts
+      interval: 30s
+      rules:
+      - alert: APIHighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        annotations:
+          summary: "High error rate on API"
+          description: "Error rate is above 5% for 5 minutes"
+
+      - alert: APIHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        annotations:
+          summary: "High API latency"
+          description: "95th percentile latency is above 1 second"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connection_pool_available < 2
+        for: 2m
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Less than 2 connections available in pool"
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total{pod=~"afribok.*"}[5m]) > 0.8
+        for: 10m
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for 10 minutes"
+
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage_bytes{pod=~"afribok.*"} / container_spec_memory_limit_bytes) > 0.85
+        for: 10m
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% of limit"
+
+      - alert: SyncQueueBacklog
+        expr: sync_queue_pending_operations > 1000
+        for: 5m
+        annotations:
+          summary: "Large sync queue backlog"
+          description: "More than 1000 pending operations in sync queue"
+
+      - alert: OfflineModeAlert
+        expr: patients_offline_duration_seconds > 3600
+        for: 1m
+        annotations:
+          summary: "Patient record offline for extended period"
+          description: "Patient offline for more than 1 hour"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: afribok
+  labels:
+    app: prometheus
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - name: web
+    port: 9090
+    targetPort: 9090
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: afribok
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+          - '--web.console.templates=/usr/share/prometheus/consoles'
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: storage
+        emptyDir:
+          sizeLimit: 10Gi
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+spec:
+  rules:
+  - apiGroups: [""]
+    resources:
+    - nodes
+    - nodes/proxy
+    - services
+    - endpoints
+    - pods
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: afribok
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: afribok

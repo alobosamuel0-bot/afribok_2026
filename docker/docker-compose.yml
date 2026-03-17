@@ -1,0 +1,109 @@
+version: "3.9"
+
+services:
+  # PostgreSQL Central Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: afribok_postgres
+    environment:
+      POSTGRES_DB: afribok
+      POSTGRES_USER: afribok
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-afribok123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afribok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - afribok_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: afribok_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - afribok_network
+
+  # Afribok Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: afribok_backend
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+      # Database
+      CENTRAL_DB_URL: postgresql+asyncpg://afribok:${POSTGRES_PASSWORD:-afribok123}@postgres:5432/afribok
+      LOCAL_DB_URL: sqlite+aiosqlite:///./data/afribok_local.db
+      
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      
+      # JWT
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-super-secret-key-change-in-production}
+      
+      # Sync
+      SYNC_ENABLED: ${SYNC_ENABLED:-true}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-300}
+      OFFLINE_MODE: ${OFFLINE_MODE:-false}
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data
+      - ./logs:/app/logs
+    
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    
+    networks:
+      - afribok_network
+    
+    restart: unless-stopped
+
+  # Optional: Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: afribok_nginx
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    depends_on:
+      - backend
+    networks:
+      - afribok_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  afribok_network:
+    driver: bridge

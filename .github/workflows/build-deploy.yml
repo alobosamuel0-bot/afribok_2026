@@ -1,0 +1,111 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_run:
+    workflows: ["Backend Tests", "Frontend Tests"]
+    types:
+      - completed
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Build backend image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: ./docker/Dockerfile.backend
+        tags: |
+          afribok-backend:latest
+          afribok-backend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build frontend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./frontend
+        file: ./docker/Dockerfile.frontend
+        tags: |
+          afribok-frontend:latest
+          afribok-frontend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Save images
+      run: |
+        docker tag afribok-backend:latest afribok-backend:${GITHUB_SHA}
+        docker tag afribok-frontend:latest afribok-frontend:${GITHUB_SHA}
+
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to staging
+      env:
+        DEPLOY_KEY: ${{ secrets.STAGING_DEPLOY_KEY }}
+        DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
+      run: |
+        echo "Deploying to staging environment..."
+        # Add deployment script
+
+    - name: Run health check
+      run: |
+        echo "Running health checks..."
+        # Add health check script
+
+  deploy-production:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to production
+      env:
+        DEPLOY_KEY: ${{ secrets.PROD_DEPLOY_KEY }}
+        DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+      run: |
+        echo "Deploying to production environment..."
+        # Add deployment script
+
+    - name: Create deployment
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const deployment = await github.rest.repos.createDeployment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: context.sha,
+            environment: 'production',
+            auto_merge: false,
+            required_contexts: []
+          });
+          console.log('Deployment created:', deployment.data.id);
+
+    - name: Notify deployment
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.repos.createDeploymentStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: ${{ github.deployment_id }},
+            state: 'success',
+            description: 'Deployment successful'
+          });

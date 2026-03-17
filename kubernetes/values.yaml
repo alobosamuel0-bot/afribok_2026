@@ -1,0 +1,143 @@
+apiVersion: helm.sh/v1
+kind: Chart
+metadata:
+  name: afribok
+  description: "Afribok Healthcare System Helm Chart"
+  type: application
+  version: 1.0.0
+  appVersion: 2026.1.0
+  keywords:
+    - healthcare
+    - telemedicine
+    - hospital-management
+  maintainers:
+    - name: Afribok Team
+      email: team@afribok.com
+---
+apiVersion: v1
+kind: Values
+metadata:
+  name: values
+data:
+  # Global configuration
+  global:
+    environment: production
+    domain: afribok.example.com
+    replicas: 3
+
+  # Backend API configuration
+  backend:
+    image:
+      repository: afribok-backend
+      tag: latest
+      pullPolicy: Always
+    replicas: 3
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+  # Frontend configuration
+  frontend:
+    image:
+      repository: afribok-frontend
+      tag: latest
+      pullPolicy: Always
+    replicas: 2
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  # Database configuration
+  postgres:
+    enabled: true
+    replicas: 1
+    storage: 20Gi
+    cpu:
+      requests: "500m"
+      limits: "2000m"
+    memory:
+      requests: "512Mi"
+      limits: "2Gi"
+
+  # Redis cache configuration
+  redis:
+    enabled: true
+    replicas: 1
+    storage: 1Gi
+    cpu:
+      requests: "100m"
+      limits: "500m"
+    memory:
+      requests: "256Mi"
+      limits: "512Mi"
+
+  # Monitoring configuration
+  monitoring:
+    enabled: true
+    prometheus:
+      replicas: 2
+      retention: 15d
+    grafana:
+      replicas: 2
+      adminPassword: "change-me"
+    alertmanager:
+      enabled: true
+
+  # Ingress configuration
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+    hosts:
+      - host: "api.afribok.example.com"
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: afribok-tls
+        hosts:
+          - api.afribok.example.com
+
+  # Backup configuration
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention: 30d
+    storageClass: standard
+
+  # Security configuration
+  security:
+    networkPolicy:
+      enabled: true
+    podSecurityPolicy:
+      enabled: true
+    rbac:
+      enabled: true
+
+  # Logging configuration
+  logging:
+    enabled: true
+    provider: stackdriver  # or elk, splunk, etc.
+    logLevel: INFO
+
+  # Scaling configuration
+  scaling:
+    maxPatients: 1000000
+    maxConcurrentUsers: 10000
+    maxRequestsPerSecond: 5000

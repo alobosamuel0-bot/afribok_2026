@@ -1,0 +1,124 @@
+name: Mobile App CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'mobile/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: 'mobile/package-lock.json'
+    
+    - name: Install dependencies
+      run: cd mobile && npm ci
+    
+    - name: Run tests
+      run: cd mobile && npm test -- --coverage
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./mobile/coverage/coverage-final.json
+        flags: mobile
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+        cache: 'npm'
+        cache-dependency-path: 'mobile/package-lock.json'
+    
+    - name: Install dependencies
+      run: cd mobile && npm ci
+    
+    - name: Run ESLint
+      run: cd mobile && npm run lint || true
+
+  build-android:
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+        cache: 'npm'
+        cache-dependency-path: 'mobile/package-lock.json'
+    
+    - name: Install dependencies
+      run: cd mobile && npm ci
+    
+    - name: Build APK
+      env:
+        EAS_TOKEN: ${{ secrets.EAS_TOKEN }}
+      run: |
+        cd mobile
+        npm install -g eas-cli
+        eas build --platform android --non-interactive --wait
+    
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: android-build
+        path: mobile/build-artifacts/
+
+  build-ios:
+    needs: [test, lint]
+    runs-on: macos-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+        cache: 'npm'
+        cache-dependency-path: 'mobile/package-lock.json'
+    
+    - name: Install dependencies
+      run: cd mobile && npm ci
+    
+    - name: Build IPA
+      env:
+        EAS_TOKEN: ${{ secrets.EAS_TOKEN }}
+      run: |
+        cd mobile
+        npm install -g eas-cli
+        eas build --platform ios --non-interactive --wait
+    
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ios-build
+        path: mobile/build-artifacts/

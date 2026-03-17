@@ -1,0 +1,85 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: afribok_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install -r backend/requirements-test.txt
+
+    - name: Install Node dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Start backend
+      env:
+        DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/afribok_test
+        REDIS_URL: redis://localhost:6379
+      run: |
+        uvicorn backend.core.app:app --host 0.0.0.0 --port 8000 &
+        sleep 5
+
+    - name: Run integration tests
+      working-directory: ./frontend
+      env:
+        REACT_APP_API_URL: http://localhost:8000
+      run: npm run test:ci
+
+    - name: Test offline-first workflow
+      working-directory: ./frontend
+      run: |
+        npm run test:ci -- --testNamePattern="offline"
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: integration-test-results
+        path: frontend/coverage/
