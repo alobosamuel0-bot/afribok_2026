@@ -22,12 +22,21 @@ const OnboardingPage = () => {
   const [integrationResult, setIntegrationResult] = useState(null);
   const [courseData, setCourseData] = useState(null);
   const [demoData, setDemoData] = useState(null);
+  const [courseProgress, setCourseProgress] = useState(() => {
+    const saved = localStorage.getItem('afribok_course_progress');
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [isRecording, setIsRecording] = useState(false);
 
   useEffect(() => {
     if (activeStep === 0) fetchWelcome();
     if (activeStep === 3) fetchCourse();
     if (activeStep === 4) fetchDemo();
   }, [activeStep]);
+
+  useEffect(() => {
+    localStorage.setItem('afribok_course_progress', JSON.stringify(courseProgress));
+  }, [courseProgress]);
 
   const fetchWelcome = async () => {
     try {
@@ -71,18 +80,31 @@ const OnboardingPage = () => {
   const handleIntegrate = async () => {
     try {
       setLoading(true);
-      const response = await api.post('/onboarding/integrate-data', {
-        has_emr: hasEMR,
-        integration_method: integrationMethod,
-        content: "Sample data for integration"
-      });
-      setIntegrationResult(response.data);
+      if (integrationMethod === 'voice') {
+        // Mock voice processing
+        const response = await api.post('/onboarding/process-voice', new FormData());
+        setIntegrationResult(response.data);
+      } else {
+        const response = await api.post('/onboarding/integrate-data', {
+          has_emr: hasEMR,
+          integration_method: integrationMethod,
+          content: "Sample data for integration"
+        });
+        setIntegrationResult(response.data);
+      }
       handleNext();
     } catch (err) {
       console.error("Integration error", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleModule = (moduleId) => {
+    setCourseProgress(prev => ({
+      ...prev,
+      [moduleId]: !prev[moduleId]
+    }));
   };
 
   const renderStepContent = (step) => {
@@ -153,12 +175,23 @@ const OnboardingPage = () => {
             <Grid container spacing={2} sx={{ mt: 2 }}>
               {courseData?.modules.map((module) => (
                 <Grid item xs={12} md={6} key={module.id}>
-                  <Card variant="outlined">
+                  <Card variant="outlined" sx={{ borderColor: courseProgress[module.id] ? 'success.main' : 'divider' }}>
                     <CardContent>
-                      <Typography variant="h6">{module.title}</Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Typography variant="h6">{module.title}</Typography>
+                        {courseProgress[module.id] && <CheckCircle color="success" />}
+                      </Box>
                       <Typography variant="caption" color="primary">{module.duration}</Typography>
                       <Typography variant="body2" sx={{ mt: 1 }}>{module.content}</Typography>
-                      <Button size="small" startIcon={<PlayCircleOutline />} sx={{ mt: 1 }}>Start Module</Button>
+                      <Button 
+                        size="small" 
+                        startIcon={courseProgress[module.id] ? <CheckCircle /> : <PlayCircleOutline />} 
+                        sx={{ mt: 1 }}
+                        onClick={() => toggleModule(module.id)}
+                        color={courseProgress[module.id] ? "success" : "primary"}
+                      >
+                        {courseProgress[module.id] ? "Completed" : "Start Module"}
+                      </Button>
                     </CardContent>
                   </Card>
                 </Grid>

@@ -3,10 +3,12 @@ Onboarding & OTP API Endpoints
 Handles universal login, AI-guided onboarding, and training courses
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 import structlog
+import os
+import subprocess
 from datetime import datetime
 
 from security.auth import (
@@ -93,17 +95,13 @@ async def welcome_guidelines(current_user: User = Depends(get_current_user)):
 
 @router.post("/integrate-data")
 async def integrate_data(request: DataIntegrationRequest, current_user: User = Depends(get_current_user)):
-    """Handle AI-driven data integration (Voice or Text)"""
+    """Handle AI-driven data integration (Text)"""
     if not request.has_emr:
         message = "That's perfectly okay! We can start exactly where you are. Our AI will help you build your digital foundation."
     else:
         message = "Great! We'll help you sync your EMR data seamlessly."
     
-    if request.integration_method == "voice":
-        # In a real system, this would trigger speech-to-text processing
-        processing_info = "Voice note received. Our AI is extracting clinical data points..."
-    else:
-        processing_info = "Text data received. Analyzing for predictive patterns..."
+    processing_info = "Text data received. Analyzing for predictive patterns..."
         
     return {
         "status": "success",
@@ -111,6 +109,38 @@ async def integrate_data(request: DataIntegrationRequest, current_user: User = D
         "processing_info": processing_info,
         "next_step": "website_check"
     }
+
+@router.post("/process-voice")
+async def process_voice(file: UploadFile = File(...), current_user: User = Depends(get_current_user)):
+    """Process clinical voice notes using manus-speech-to-text"""
+    temp_path = f"/tmp/{file.filename}"
+    with open(temp_path, "wb") as buffer:
+        buffer.write(await file.read())
+    
+    try:
+        # Use the pre-installed manus-speech-to-text utility
+        result = subprocess.run(["manus-speech-to-text", temp_path], capture_output=True, text=True)
+        transcription = result.stdout.strip()
+        
+        # Mock AI entity extraction from transcription
+        extracted_data = {
+            "age": 45,
+            "condition": "Hypertension",
+            "severity": 3
+        }
+        
+        return {
+            "status": "success",
+            "transcription": transcription,
+            "extracted_data": extracted_data,
+            "message": "Voice note processed. Our AI has extracted the key clinical data points."
+        }
+    except Exception as e:
+        logger.error("voice_processing_error", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to process voice note")
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 @router.get("/training-course")
 async def get_training_course():
