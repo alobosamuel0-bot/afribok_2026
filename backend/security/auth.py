@@ -10,11 +10,43 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 import structlog
-
+import random
+import string
 from core.config import settings
 
 
 logger = structlog.get_logger(__name__)
+
+# In-memory OTP store (In production, use Redis)
+otp_store = {}
+
+
+def generate_otp(length: int = 6) -> str:
+    """Generate a numeric OTP"""
+    return "".join(random.choices(string.digits, k=length))
+
+
+def store_otp(identifier: str, otp: str):
+    """Store OTP with expiration"""
+    expires_at = datetime.utcnow() + timedelta(minutes=settings.OTP_EXPIRATION_MINUTES)
+    otp_store[identifier] = {"otp": otp, "expires_at": expires_at}
+
+
+def verify_otp(identifier: str, otp: str) -> bool:
+    """Verify OTP and check expiration"""
+    if identifier not in otp_store:
+        return False
+    
+    stored = otp_store[identifier]
+    if datetime.utcnow() > stored["expires_at"]:
+        del otp_store[identifier]
+        return False
+    
+    if stored["otp"] == otp:
+        del otp_store[identifier]
+        return True
+    
+    return False
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

@@ -111,8 +111,10 @@ def create_app() -> FastAPI:
 
     # Import and include routers from api modules
     from api.patients import router as patients_router
+    from api.onboarding import router as onboarding_router
     
     app.include_router(patients_router)
+    app.include_router(onboarding_router)
 
     logger.info("app.created", routes=len(app.routes))
 

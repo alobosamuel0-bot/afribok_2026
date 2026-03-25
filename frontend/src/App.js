@@ -14,6 +14,7 @@ import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import PatientDetailsPage from './pages/PatientDetailsPage';
 import AdminPage from './pages/AdminPage';
+import OnboardingPage from './pages/OnboardingPage';
 
 // Hooks
 import useAuth from './hooks/useAuth';
@@ -139,6 +140,16 @@ function App() {
                 element={
                   <ProtectedRoute
                     element={<Dashboard />}
+                    isAuthenticated={isAuthenticated}
+                  />
+                }
+              />
+
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute
+                    element={<OnboardingPage />}
                     isAuthenticated={isAuthenticated}
                   />
                 }

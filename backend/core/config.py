@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "change-me-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
+    OTP_EXPIRATION_MINUTES: int = 10
+    OTP_LENGTH: int = 6
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     # ============= FILES =============

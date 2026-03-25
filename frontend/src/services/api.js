@@ -288,6 +288,38 @@ export const apiService = {
   },
 
   /**
+   * Onboarding: Get welcome guidelines
+   */
+  async getWelcome() {
+    const response = await api.get('/onboarding/welcome');
+    return response;
+  },
+
+  /**
+   * Onboarding: Integrate data
+   */
+  async integrateData(data) {
+    const response = await api.post('/onboarding/integrate-data', data);
+    return response;
+  },
+
+  /**
+   * Onboarding: Get training course
+   */
+  async getTrainingCourse() {
+    const response = await api.get('/onboarding/training-course');
+    return response;
+  },
+
+  /**
+   * Onboarding: Setup demo environment
+   */
+  async getDemoEnvironment() {
+    const response = await api.get('/onboarding/demo-environment');
+    return response;
+  },
+
+  /**
    * Sync pending operations to backend
    */
   async syncPendingOperations() {
